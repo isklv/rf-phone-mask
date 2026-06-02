@@ -110,9 +110,10 @@ export function applyMask(input, options = {}) {
   }
 
   input.setAttribute('inputmode', 'numeric');
-  input.setAttribute('maxlength', MAX_LENGTH + 4); // max formatted length
+  input.setAttribute('maxlength', 18); // max formatted length: +7 (XXX) XXX-XX-XX
 
   let skipNextInput = false;
+  let digitTyped = false;
 
   function handleFocus() {
     // If empty, insert +7 prefix
@@ -136,6 +137,15 @@ export function applyMask(input, options = {}) {
       return;
     }
 
+    // Only reformat when a digit was just typed.
+    // On other input events (Delete, IME, etc.) we skip reformatting
+    // to avoid cursor jumps.
+    if (!digitTyped) {
+      digitTyped = false;
+      return;
+    }
+    digitTyped = false;
+
     const raw = input.value;
     const cursor = input.selectionStart;
 
@@ -146,22 +156,14 @@ export function applyMask(input, options = {}) {
       return;
     }
 
-    // Count the user's digits before the cursor (exclude prefix '7' at position 1)
-    // The prefix is '+7 (' (positions 0-3). Count digits from position 4 onward.
-    // When typing a new digit, the cursor is AFTER that digit, so we count digits
-    // in range [4, cursor) — this INCLUDES the newly typed digit.
-    // cursorDigitPos = how many user-digits are before or at cursor.
-    // After formatting, we want cursor positioned after the cursorDigitPos-th digit.
     const cursorDigitPos = countUserDigitsBefore(raw, cursor);
 
     const formatted = formatDigits(digits);
     input.value = formatted;
 
-    // Position cursor after the cursorDigitPos-th digit
     const newPos = cursorDigitPos + getPrefixUpTo(cursorDigitPos);
     input.setSelectionRange(newPos, newPos);
 
-    // Callback on complete (10 digits)
     if (digits.length === 10 && onComplete) {
       onComplete(formatted);
     }
@@ -209,13 +211,9 @@ export function applyMask(input, options = {}) {
         return;
       }
 
-      // Prevent browser from deleting from the formatted string
       e.preventDefault();
 
-      // Get the raw digits and remove the one before the cursor
       const rawDigits = parseFormatted(input.value);
-      // digitPos is the count of user-digits before cursor
-      // We want to remove the digitPos-th digit (0-indexed: digitPos-1)
       const newDigits = rawDigits.slice(0, digitPos - 1) + rawDigits.slice(digitPos);
 
       if (!newDigits.length) {
@@ -225,23 +223,57 @@ export function applyMask(input, options = {}) {
         const formatted = formatDigits(newDigits);
         input.value = formatted;
 
-        // Position cursor after the (digitPos-1)-th digit
         const newPos = (digitPos - 1) + getPrefixUpTo(digitPos - 1);
         input.setSelectionRange(newPos, newPos);
       }
 
-      // Skip the input event that will fire after backspace
       skipNextInput = true;
       return;
     }
 
-    // Allow delete
-    if (e.key === 'Delete') return;
+    // Handle delete (same logic as backspace but removes digit at cursor)
+    if (e.key === 'Delete') {
+      const cursor = input.selectionStart || 0;
+      const digitPos = countUserDigitsBefore(input.value, cursor);
 
-    // Only allow digits
-    if (!DIGIT.test(e.key) || e.key.length !== 1) {
+      if (digitPos <= 0) {
+        e.preventDefault();
+        return;
+      }
+
       e.preventDefault();
+
+      const rawDigits = parseFormatted(input.value);
+      // digitPos = number of user-digits before cursor; delete the next one (index digitPos)
+      if (digitPos >= rawDigits.length) {
+        // Cursor is after the last digit — nothing to delete
+        return;
+      }
+
+      const newDigits = rawDigits.slice(0, digitPos) + rawDigits.slice(digitPos + 1);
+
+      if (!newDigits.length) {
+        input.value = '';
+        input.setSelectionRange(0, 0);
+      } else {
+        const formatted = formatDigits(newDigits);
+        input.value = formatted;
+
+        const newPos = digitPos + getPrefixUpTo(digitPos);
+        input.setSelectionRange(newPos, newPos);
+      }
+
+      skipNextInput = true;
+      return;
     }
+
+    // Digit typed — let the browser insert it, then reformat in handleInput
+    if (DIGIT.test(e.key) && e.key.length === 1) {
+      digitTyped = true;
+      return;
+    }
+
+    e.preventDefault();
   }
 
   function handlePaste(e) {
@@ -259,7 +291,7 @@ export function applyMask(input, options = {}) {
     const formatted = formatDigits(trimmed);
     input.value = formatted;
 
-    const newPos = cursorDigitPos + trimmed.length - cursorDigitPos + getPrefixUpTo(trimmed.length);
+    const newPos = trimmed.length + getPrefixUpTo(trimmed.length);
     input.setSelectionRange(newPos, newPos);
 
     if (trimmed.length === 10 && onComplete) {
