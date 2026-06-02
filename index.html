@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>rf-phone-mask — Demo</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0d1117;
+      color: #c9d1d9;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 1rem;
+    }
+    .container {
+      max-width: 520px;
+      width: 100%;
+    }
+    h1 {
+      font-size: 1.6rem;
+      color: #58a6ff;
+      margin-bottom: 0.25rem;
+    }
+    .subtitle {
+      color: #8b949e;
+      margin-bottom: 1.5rem;
+      font-size: 0.9rem;
+    }
+    .card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 1rem;
+    }
+    label {
+      display: block;
+      font-size: 0.8rem;
+      color: #8b949e;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.5rem;
+    }
+    input {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      font-size: 1.1rem;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      background: #0d1117;
+      color: #c9d1d9;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    input:focus {
+      border-color: #58a6ff;
+    }
+    input.complete {
+      border-color: #3fb950;
+    }
+    .result {
+      margin-top: 1rem;
+      padding: 0.75rem 1rem;
+      background: #0d1117;
+      border-radius: 8px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 0.85rem;
+      color: #8b949e;
+      min-height: 2.5rem;
+    }
+    .result span {
+      color: #c9d1d9;
+    }
+    .badge {
+      display: inline-block;
+      padding: 0.15rem 0.5rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      margin-left: 0.5rem;
+    }
+    .badge.ready { background: #23863633; color: #3fb950; }
+    .badge.pending { background: #d2992233; color: #d29922; }
+    .links {
+      margin-top: 1.5rem;
+      text-align: center;
+    }
+    .links a {
+      color: #58a6ff;
+      text-decoration: none;
+      font-size: 0.85rem;
+    }
+    .links a:hover { text-decoration: underline; }
+    .links a + a { margin-left: 1rem; }
+    .api-test {
+      margin-top: 1rem;
+    }
+    .api-test button {
+      padding: 0.4rem 0.8rem;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      background: #21262d;
+      color: #c9d1d9;
+      cursor: pointer;
+      font-size: 0.8rem;
+      margin-right: 0.5rem;
+      margin-bottom: 0.5rem;
+      transition: background 0.15s;
+    }
+    .api-test button:hover { background: #30363d; }
+    .api-output {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 0.8rem;
+      color: #8b949e;
+      white-space: pre-wrap;
+      margin-top: 0.5rem;
+      background: #0d1117;
+      padding: 0.5rem;
+      border-radius: 6px;
+      min-height: 2rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📱 rf-phone-mask</h1>
+    <p class="subtitle">Input mask for Russian phone numbers · +7 (XXX) XXX-XX-XX</p>
+
+    <div class="card">
+      <label for="phone">Введите номер телефона</label>
+      <input
+        type="text"
+        id="phone"
+        placeholder="+7 (___) ___-__-__"
+        autocomplete="tel"
+      >
+      <div class="result" id="status">
+        Статус: <span class="badge pending" id="badge">ожидание</span>
+      </div>
+    </div>
+
+    <div class="card api-test">
+      <label>API-тесты</label>
+      <div>
+        <button onclick="testFormat()">formatDigits</button>
+        <button onclick="testNormalize()">normalizeDigits</button>
+        <button onclick="testParse()">parseFormatted</button>
+        <button onclick="testStrip()">stripNonDigits</button>
+      </div>
+      <div class="api-output" id="apiOutput"></div>
+    </div>
+
+    <div class="links">
+      <a href="https://www.npmjs.com/package/rf-phone-mask" target="_blank">npm</a>
+      <a href="https://github.com/isklv/rf-phone-mask" target="_blank">GitHub</a>
+    </div>
+  </div>
+
+  <script src="dist/rf-phone-mask.min.js"></script>
+  <script>
+    const phoneInput = document.getElementById('phone');
+    const statusEl = document.getElementById('status');
+    const badgeEl = document.getElementById('badge');
+
+    const controller = rfPhoneMask.applyMask(phoneInput, {
+      onComplete(formatted) {
+        phoneInput.classList.add('complete');
+        badgeEl.textContent = 'готово ✓';
+        badgeEl.className = 'badge ready';
+        statusEl.innerHTML = 'Статус: <span class="badge ready">готово ✓</span>';
+      }
+    });
+
+    phoneInput.addEventListener('input', () => {
+      const digits = rfPhoneMask.normalizeDigits(phoneInput.value).digits;
+      if (digits.length === 0) {
+        phoneInput.classList.remove('complete');
+        badgeEl.textContent = 'ожидание';
+        badgeEl.className = 'badge pending';
+      }
+    });
+
+    function testFormat() {
+      const result = rfPhoneMask.formatDigits('9161234567');
+      document.getElementById('apiOutput').textContent =
+        `formatDigits('9161234567') → "${result}"`;
+    }
+
+    function testNormalize() {
+      const tests = [
+        ['89161234567', '89161234567'],
+        ['79161234567', '79161234567'],
+        ['+7 916 123-45-67', '+7 916 123-45-67'],
+        ['9161234567', '9161234567'],
+      ];
+      let output = '';
+      for (const [input, label] of tests) {
+        const r = rfPhoneMask.normalizeDigits(input);
+        output += `${label} → digits: "${r.digits}", hasPrefix: ${r.hasPrefix}\n`;
+      }
+      document.getElementById('apiOutput').textContent = output.trim();
+    }
+
+    function testParse() {
+      const formatted = '+7 (916) 123-45-67';
+      const result = rfPhoneMask.parseFormatted(formatted);
+      document.getElementById('apiOutput').textContent =
+        `parseFormatted('${formatted}') → "${result}"`;
+    }
+
+    function testStrip() {
+      const input = '+7 (916) 123-45-67';
+      const result = rfPhoneMask.stripNonDigits(input);
+      document.getElementById('apiOutput').textContent =
+        `stripNonDigits('${input}') → "${result}"`;
+    }
+  </script>
+</body>
+</html>
