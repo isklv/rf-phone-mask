@@ -97,8 +97,9 @@ function formatDigits(digits) {
  */
 function parseFormatted(formatted) {
   let raw = stripNonDigits(formatted);
-  // Strip the country code digit (7) if present at start
-  if (raw.startsWith('7') && raw.length > 1) {
+  // Strip the country code digit (7) if it's part of a "+7" prefix
+  // Check for '+' to distinguish "+7..." (prefix) from bare "7..." (user digits)
+  if (raw.startsWith('7') && formatted.includes('+')) {
     raw = raw.slice(1);
   }
   return raw.length <= 10 ? raw : '';
@@ -184,10 +185,32 @@ function applyMask(input, options = {}) {
   }
 
   function handleFocus() {
-    // If empty, insert +7 prefix
-    if (!input.value) {
+    const val = input.value;
+    if (!val) {
+      // Empty — insert +7 prefix
       input.value = '+7 (';
       input.setSelectionRange(4, 4);
+      return;
+    }
+
+    // Autocomplete or pre-filled value — reformat it
+    const rawDigits = parseFormatted(val);
+    if (rawDigits.length && val !== formatDigits(rawDigits)) {
+      // Value exists but isn't in our format → reformat
+      skipNextInput = true;
+      setDigits(rawDigits, rawDigits.length);
+    } else if (val.startsWith('+7') || val.startsWith('8')) {
+      // Already formatted with prefix, just ensure cursor is at end
+      input.setSelectionRange(val.length, val.length);
+    }
+  }
+
+  function handleChange() {
+    // Catches autocomplete that fires after focus
+    const rawDigits = parseFormatted(input.value);
+    if (rawDigits.length) {
+      skipNextInput = true;
+      setDigits(rawDigits, rawDigits.length);
     }
   }
 
@@ -207,18 +230,28 @@ function applyMask(input, options = {}) {
     if (e.ctrlKey || e.metaKey) return;
 
     const cursor = input.selectionStart || 0;
+    const cursorEnd = input.selectionEnd || cursor;
     const rawDigits = parseFormatted(input.value);
     const digitPos = countUserDigitsBefore(input.value, cursor);
 
     // Handle backspace
     if (e.key === 'Backspace') {
-      if (digitPos <= 0) {
-        // Can't delete prefix
-        e.preventDefault();
+      e.preventDefault();
+
+      // If there's a selection, remove the selected digits
+      if (cursorEnd > cursor) {
+        const endDigitPos = countUserDigitsBefore(input.value, cursorEnd);
+        const newDigits = rawDigits.slice(0, digitPos) + rawDigits.slice(endDigitPos);
+        setDigits(newDigits, digitPos);
+        skipNextInput = true;
         return;
       }
 
-      e.preventDefault();
+      if (digitPos <= 0) {
+        // Can't delete prefix
+        return;
+      }
+
       const newDigits = rawDigits.slice(0, digitPos - 1) + rawDigits.slice(digitPos);
       setDigits(newDigits, digitPos - 1);
       skipNextInput = true;
@@ -227,12 +260,21 @@ function applyMask(input, options = {}) {
 
     // Handle delete
     if (e.key === 'Delete') {
-      if (digitPos <= 0 || digitPos >= rawDigits.length) {
-        e.preventDefault();
+      e.preventDefault();
+
+      // If there's a selection, remove the selected digits
+      if (cursorEnd > cursor) {
+        const endDigitPos = countUserDigitsBefore(input.value, cursorEnd);
+        const newDigits = rawDigits.slice(0, digitPos) + rawDigits.slice(endDigitPos);
+        setDigits(newDigits, digitPos);
+        skipNextInput = true;
         return;
       }
 
-      e.preventDefault();
+      if (digitPos <= 0 || digitPos >= rawDigits.length) {
+        return;
+      }
+
       const newDigits = rawDigits.slice(0, digitPos) + rawDigits.slice(digitPos + 1);
       setDigits(newDigits, digitPos);
       skipNextInput = true;
@@ -291,6 +333,7 @@ function applyMask(input, options = {}) {
   input.addEventListener('keydown', handleKeydown);
   input.addEventListener('paste', handlePaste);
   input.addEventListener('focus', handleFocus);
+  input.addEventListener('change', handleChange);
   input.addEventListener('blur', handleBlur);
 
   return {
@@ -299,6 +342,7 @@ function applyMask(input, options = {}) {
       input.removeEventListener('keydown', handleKeydown);
       input.removeEventListener('paste', handlePaste);
       input.removeEventListener('focus', handleFocus);
+      input.removeEventListener('change', handleChange);
       input.removeEventListener('blur', handleBlur);
     },
   };
