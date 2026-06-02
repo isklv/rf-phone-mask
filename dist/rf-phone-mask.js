@@ -123,6 +123,7 @@ function applyMask(input, options = {}) {
 
   let skipNextInput = false;
   let digitTyped = false;
+  let cursorDigitPosBefore = 0; // number of user digits before cursor, captured in keydown
 
   function handleFocus() {
     // If empty, insert +7 prefix
@@ -156,8 +157,6 @@ function applyMask(input, options = {}) {
     digitTyped = false;
 
     const raw = input.value;
-    const cursor = input.selectionStart;
-
     const { digits } = normalizeDigits(raw);
 
     if (!digits.length) {
@@ -165,12 +164,13 @@ function applyMask(input, options = {}) {
       return;
     }
 
-    const cursorDigitPos = countUserDigitsBefore(raw, cursor);
-
     const formatted = formatDigits(digits);
     input.value = formatted;
 
-    const newPos = cursorDigitPos + getPrefixUpTo(cursorDigitPos);
+    // cursorDigitPosBefore = digits before cursor BEFORE the new digit was inserted.
+    // The new digit is at index cursorDigitPosBefore (0-based) among user digits.
+    // Cursor should be placed right after it.
+    const newPos = cursorDigitPosBefore + getPrefixUpTo(cursorDigitPosBefore);
     input.setSelectionRange(newPos, newPos);
 
     if (digits.length === 10 && onComplete) {
@@ -276,8 +276,9 @@ function applyMask(input, options = {}) {
       return;
     }
 
-    // Digit typed — let the browser insert it, then reformat in handleInput
+    // Digit typed — capture cursor digit pos BEFORE browser inserts, then reformat in handleInput
     if (DIGIT.test(e.key) && e.key.length === 1) {
+      cursorDigitPosBefore = countUserDigitsBefore(input.value, input.selectionStart || 0);
       digitTyped = true;
       return;
     }
