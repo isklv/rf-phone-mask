@@ -38,12 +38,21 @@ eq(normalizeDigits('abc').digits, '', 'normalize letters only');
 eq(formatDigits('9161234567'), '+7 (916) 123-45-67', 'format full number');
 eq(formatDigits('4951234567'), '+7 (495) 123-45-67', 'format Moscow');
 eq(formatDigits('8001234567'), '+7 (800) 123-45-67', 'format 800');
-eq(formatDigits('123'), '', 'format too short → empty');
+eq(formatDigits('9'), '+7 (9', 'format 1 digit');
+eq(formatDigits('91'), '+7 (91', 'format 2 digits');
+eq(formatDigits('916'), '+7 (916)', 'format 3 digits');
+eq(formatDigits('9161'), '+7 (916) 1', 'format 4 digits');
+eq(formatDigits('916123'), '+7 (916) 123', 'format 6 digits');
+eq(formatDigits('9161234'), '+7 (916) 123-4', 'format 7 digits');
+eq(formatDigits('91612345'), '+7 (916) 123-45', 'format 8 digits');
+eq(formatDigits('916123456'), '+7 (916) 123-45-6', 'format 9 digits');
 eq(formatDigits(''), '', 'format empty → empty');
 
 // --- parseFormatted ---
 eq(parseFormatted('+7 (916) 123-45-67'), '9161234567', 'parse formatted');
 eq(parseFormatted('9161234567'), '9161234567', 'parse raw digits');
+eq(parseFormatted('+7 (916'), '916', 'parse partial');
+eq(parseFormatted('+7 (916) 123'), '916123', 'parse partial 6');
 eq(parseFormatted(''), '', 'parse empty');
 
 // --- summary ---

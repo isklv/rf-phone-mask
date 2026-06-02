@@ -16,57 +16,81 @@ export function stripNonDigits(value) {
 }
 
 /**
- * Normalize raw digits to a 10-digit Russian number (area code + subscriber)
+ * Normalize raw digits to a Russian number (area code + subscriber)
  *
  * Rules:
  *   - If starts with 8 → replace with 7
  *   - If starts with 7 → strip it (will re-add +7 later)
- *   - If 11 digits and starts with 7 → strip leading 7
- *   - If 10 digits → keep as-is
+ *   - If ≤10 digits → keep as-is
  *   - Otherwise → empty string
  *
  * Returns { digits: string, hasPrefix: boolean }
- *   digits = 10-digit number without country code
+ *   digits = number without country code (up to 10 digits)
  */
 export function normalizeDigits(raw) {
   let digits = stripNonDigits(raw);
-
   if (!digits.length) return { digits: '', hasPrefix: false };
 
-  // Strip leading + (already handled by stripNonDigits, but just in case)
+  // 8 → 7
   if (digits.startsWith('8')) {
     digits = '7' + digits.slice(1);
   }
-
+  // strip leading 7
   if (digits.startsWith('7')) {
     digits = digits.slice(1);
-    if (digits.length === 10) return { digits, hasPrefix: true };
-    return { digits: '', hasPrefix: false };
   }
 
-  // No country code — just subscriber digits
-  if (digits.length <= 10) return { digits, hasPrefix: false };
-
-  return { digits: '', hasPrefix: false };
+  if (digits.length > 10) return { digits: '', hasPrefix: false };
+  return { digits, hasPrefix: true };
 }
 
 /**
- * Format 10 raw digits into +7 (XXX) XXX-XX-XX
+ * Format raw digits into +7 (XXX) XXX-XX-XX
+ * Supports partial input — shows progress as digits are typed.
+ *
+ * - 0 digits: ''
+ * - 1-3 digits: +7 (XXX
+ * - 4-6 digits: +7 (XXX) XXX
+ * - 7-8 digits: +7 (XXX) XXX-XX
+ * - 9 digits:   +7 (XXX) XXX-XX-X
+ * - 10 digits: +7 (XXX) XXX-XX-XX
+ *
+ * Returns '' if no digits.
  */
 export function formatDigits(digits) {
-  if (!digits || digits.length !== 10) return '';
+  if (!digits || !digits.length) return '';
 
-  return `+7 (${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6, 8)}-${digits.slice(8, 10)}`;
+  const d = digits.slice(0, 10);
+  let result = '';
+
+  if (d.length >= 1) {
+    result = '+7 (' + d.slice(0, 3);
+  }
+  if (d.length >= 4) {
+    result += ') ' + d.slice(3, 6);
+  } else if (d.length >= 3) {
+    result += ')';
+  }
+  if (d.length >= 7) {
+    result += '-' + d.slice(6, 8);
+  }
+  if (d.length >= 9) {
+    result += '-' + d.slice(8, 10);
+  }
+
+  return result;
 }
 
 /**
- * Parse a formatted phone string back to raw 10-digit number
+ * Parse a formatted phone string back to raw digits
  */
 export function parseFormatted(formatted) {
-  const raw = stripNonDigits(formatted);
-  if (raw.startsWith('7') && raw.length === 11) return raw.slice(1);
-  if (raw.length === 10) return raw;
-  return '';
+  let raw = stripNonDigits(formatted);
+  // Strip the country code digit (7) if present at start
+  if (raw.startsWith('7') && raw.length > 1) {
+    raw = raw.slice(1);
+  }
+  return raw.length <= 10 ? raw : '';
 }
 
 /**
@@ -86,13 +110,11 @@ export function applyMask(input, options = {}) {
   input.setAttribute('inputmode', 'numeric');
   input.setAttribute('maxlength', MAX_LENGTH + 4); // max formatted length
 
-  let cursorPosition = null;
-
   function handleInput() {
     const raw = input.value;
     const cursor = input.selectionStart;
 
-    const { digits, hasPrefix } = normalizeDigits(raw);
+    const { digits } = normalizeDigits(raw);
 
     if (!digits.length) {
       input.value = '';
@@ -102,14 +124,14 @@ export function applyMask(input, options = {}) {
     const prevDigits = parseFormatted(input.value);
     const digitDelta = digits.length - prevDigits.length;
 
-    // Calculate cursor position before reformatting
+    // Calculate cursor digit position before reformatting
     const cursorDigitPos = countDigitsBefore(raw, cursor);
 
     const formatted = formatDigits(digits);
     input.value = formatted;
 
-    // Restore cursor
-    const newPos = cursorDigitPos + digitDelta + getPrefixLength(digits.length);
+    // Restore cursor: position it after the cursorDigitPos-th digit in the formatted string
+    const newPos = cursorDigitPos + getPrefixUpTo(cursorDigitPos);
     input.setSelectionRange(newPos, newPos);
 
     // Callback on complete (10 digits)
@@ -126,10 +148,17 @@ export function applyMask(input, options = {}) {
     return count;
   }
 
-  function getPrefixLength(digitCount) {
-    // +7 ( = 4 chars prefix before first digit
-    if (digitCount > 3) return 4;
-    return 4;
+  // Returns the number of non-digit chars before the n-th digit in the formatted string
+  function getPrefixUpTo(n) {
+    // +7 (XXX) XXX-XX-XX
+    // digit 1-3: prefix = '+7 (' = 3 chars
+    // digit 4-6: prefix = '+7 (' + ')' + ' ' = 5 chars
+    // digit 7-8: prefix = '+7 (' + ')' + ' ' + '-' = 6 chars
+    // digit 9-10: prefix = '+7 (' + ')' + ' ' + '-' + '-' = 7 chars
+    if (n <= 3) return 3;
+    if (n <= 6) return 5;
+    if (n <= 8) return 6;
+    return 7;
   }
 
   function handleKeydown(e) {
@@ -157,13 +186,14 @@ export function applyMask(input, options = {}) {
     const combined = prevDigits.slice(0, cursorDigitPos) + digits + prevDigits.slice(cursorDigitPos);
     const trimmed = combined.slice(0, 10);
 
-    input.value = formatDigits(trimmed);
+    const formatted = formatDigits(trimmed);
+    input.value = formatted;
 
-    const newPos = cursorDigitPos + trimmed.length - cursorDigitPos + 4;
+    const newPos = cursorDigitPos + trimmed.length - cursorDigitPos + getPrefixUpTo(trimmed.length);
     input.setSelectionRange(newPos, newPos);
 
     if (trimmed.length === 10 && onComplete) {
-      onComplete(input.value);
+      onComplete(formatted);
     }
   }
 
