@@ -2,6 +2,8 @@
 
 Input mask for Russian phone numbers. Formats as `+7 (XXX) XXX-XX-XX`.
 
+👉 **Live Demo:** [isklv.github.io/rf-phone-mask](https://isklv.github.io/rf-phone-mask/)
+
 Accepts any input format — `+7`, `8`, `7`, or raw digits — and normalizes everything.
 
 ## Features
