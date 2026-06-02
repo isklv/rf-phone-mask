@@ -1,6 +1,6 @@
 {
   "name": "rf-phone-mask",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "Input mask for Russian phone numbers (+7 format)",
   "main": "src/index.js",
   "type": "module",
