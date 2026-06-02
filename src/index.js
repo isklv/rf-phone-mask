@@ -159,9 +159,10 @@ export function applyMask(input, options = {}) {
     input.value = formatted;
 
     // cursorDigitPosBefore = digits before cursor BEFORE the new digit was inserted.
-    // The new digit is at index cursorDigitPosBefore (0-based) among user digits.
-    // Cursor should be placed right after it.
-    const newPos = cursorDigitPosBefore + getPrefixUpTo(cursorDigitPosBefore);
+    // After insertion, the new digit is at 1-indexed position (cursorDigitPosBefore + 1) among user digits.
+    // Cursor should be right after it.
+    const cursorDigitPosAfter = cursorDigitPosBefore + 1;
+    const newPos = cursorDigitPosAfter + getPrefixUpTo(cursorDigitPosAfter);
     input.setSelectionRange(newPos, newPos);
 
     if (digits.length === 10 && onComplete) {
