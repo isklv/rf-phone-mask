@@ -10,8 +10,8 @@ Accepts any input format — `+7`, `8`, `7`, or raw digits — and normalizes ev
 - **Smart normalization** — `8` → `+7`, `7` → `+7`, raw digits → `+7`
 - **Paste support** — paste any format, gets normalized
 - **Cursor preservation** — cursor stays where you expect during formatting
-- **Zero dependencies** — 1.2 KB, pure JS
-- **ESM only** — modern, no CommonJS
+- **Zero dependencies** — 1.9 KB minified, pure JS
+- **ESM + UMD** — npm package or direct `<script>` tag
 
 ## Install
 
@@ -19,9 +19,42 @@ Accepts any input format — `+7`, `8`, `7`, or raw digits — and normalizes ev
 npm install rf-phone-mask
 ```
 
+## Browser (without npm)
+
+```html
+<!-- Full version (4.3 KB) -->
+<script src="https://unpkg.com/rf-phone-mask/dist/rf-phone-mask.js"></script>
+
+<!-- Minified (1.9 KB) -->
+<script src="https://unpkg.com/rf-phone-mask/dist/rf-phone-mask.min.js"></script>
+```
+
+After including, all functions are available on the `rfPhoneMask` global:
+
+```html
+<input type="text" id="phone">
+
+<script>
+  // DOM mask
+  const controller = rfPhoneMask.applyMask(document.getElementById('phone'), {
+    onComplete: (value) => console.log('Ready:', value),
+  });
+
+  // Utility functions
+  rfPhoneMask.formatDigits('9161234567');
+  // → '+7 (916) 123-45-67'
+
+  rfPhoneMask.normalizeDigits('+79161234567');
+  // → { digits: '9161234567', hasPrefix: true }
+
+  // Remove mask later
+  // controller.destroy();
+</script>
+```
+
 ## Usage
 
-### DOM Mask (vanilla JS)
+### DOM Mask (vanilla JS) — npm
 
 ```js
 import { applyMask } from 'rf-phone-mask';
