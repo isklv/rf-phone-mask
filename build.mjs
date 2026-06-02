@@ -1,7 +1,8 @@
 import fs from 'fs';
+import { minify } from 'terser';
 
-// Read source
-const src = fs.readFileSync('src/index.js', 'utf8');
+// Read source and strip `export` keywords for UMD compat
+const src = fs.readFileSync('src/index.js', 'utf8').replace(/export\s+/g, '');
 
 // Build UMD wrapper
 const umd = `(function(global, factory) {
@@ -26,25 +27,27 @@ return {
 // Write unminified browser version
 fs.writeFileSync('dist/rf-phone-mask.js', umd);
 
-// Simple minification
-function minify(code) {
-  // Remove single-line comments (but not inside strings)
-  code = code.replace(/\/\/.*$/gm, '');
-  // Remove multi-line comments
-  code = code.replace(/\/\*[\s\S]*?\*\//g, '');
-  // Remove blank lines
-  code = code.replace(/^\s*[\r\n]/gm, '');
-  // Collapse whitespace
-  code = code.replace(/\s+/g, ' ');
-  // Collapse around operators/punctuation
-  code = code.replace(/\s*([{}();,:=\[>\]])\s*/g, '$1');
-  // But keep space after keywords
-  code = code.replace(/(\b(if|else|for|while|return|var|function|typeof|new|in|of|instanceof|try|catch|finally|throw|switch|case|break|continue|default|do|delete|void|with|yield|await|async)\b)/g, ' $1 ');
-  return code.trim();
+// Minify with Terser
+const result = await minify(umd, {
+  mangle: {
+    // Reserve the IIFE parameter name so it doesn't conflict with inner function params
+    reserved: ['global', 'factory'],
+    // Keep function names for readability
+    keep_fnames: false,
+  },
+  compress: {
+    defaults: true,
+  },
+  output: {
+    comments: false,
+  },
+});
+
+if (result.code) {
+  fs.writeFileSync('dist/rf-phone-mask.min.js', result.code);
+  console.log('Built dist/rf-phone-mask.js —', Buffer.byteLength(umd, 'utf8'), 'bytes');
+  console.log('Built dist/rf-phone-mask.min.js —', Buffer.byteLength(result.code, 'utf8'), 'bytes');
+} else {
+  console.error('Minification failed!');
+  process.exit(1);
 }
-
-const minified = minify(umd);
-fs.writeFileSync('dist/rf-phone-mask.min.js', minified);
-
-console.log('Built dist/rf-phone-mask.js —', Buffer.byteLength(umd, 'utf8'), 'bytes');
-console.log('Built dist/rf-phone-mask.min.js —', Buffer.byteLength(minified, 'utf8'), 'bytes');
