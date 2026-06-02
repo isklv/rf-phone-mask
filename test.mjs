@@ -31,6 +31,7 @@ eq(normalizeDigits('79161234567').digits, '9161234567', 'normalize 7 prefix');
 eq(normalizeDigits('9161234567').digits, '9161234567', 'normalize raw 10 digits');
 eq(normalizeDigits('+7 (916) 123-45-67').digits, '9161234567', 'normalize formatted');
 eq(normalizeDigits('916').digits, '916', 'normalize partial input');
+eq(normalizeDigits('91612345670').digits, '9161234567', 'normalize >10 digits → trim');
 eq(normalizeDigits('').digits, '', 'normalize empty');
 eq(normalizeDigits('abc').digits, '', 'normalize letters only');
 

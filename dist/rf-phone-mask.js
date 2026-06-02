@@ -31,7 +31,7 @@ function stripNonDigits(value) {
  *   - If starts with 8 → replace with 7
  *   - If starts with 7 → strip it (will re-add +7 later)
  *   - If ≤10 digits → keep as-is
- *   - Otherwise → empty string
+ *   - If >10 digits → trim to 10
  *
  * Returns { digits: string, hasPrefix: boolean }
  *   digits = number without country code (up to 10 digits)
@@ -49,7 +49,9 @@ function normalizeDigits(raw) {
     digits = digits.slice(1);
   }
 
-  if (digits.length > 10) return { digits: '', hasPrefix: false };
+  // Trim to max 10 digits (don't reject, just cap)
+  if (digits.length > 10) digits = digits.slice(0, 10);
+
   return { digits, hasPrefix: true };
 }
 
@@ -91,7 +93,7 @@ function formatDigits(digits) {
 }
 
 /**
- * Parse a formatted phone string back to raw digits
+ * Parse a formatted phone string back to raw digits (without country code)
  */
 function parseFormatted(formatted) {
   let raw = stripNonDigits(formatted);
@@ -119,7 +121,30 @@ function applyMask(input, options = {}) {
   input.setAttribute('inputmode', 'numeric');
   input.setAttribute('maxlength', MAX_LENGTH + 4); // max formatted length
 
+  let skipNextInput = false;
+
+  function handleFocus() {
+    // If empty, insert +7 prefix
+    if (!input.value) {
+      input.value = '+7 (';
+      input.setSelectionRange(4, 4);
+    }
+  }
+
+  function handleBlur() {
+    // If only prefix remains, clear it
+    const digits = stripNonDigits(input.value);
+    if (!digits.length) {
+      input.value = '';
+    }
+  }
+
   function handleInput() {
+    if (skipNextInput) {
+      skipNextInput = false;
+      return;
+    }
+
     const raw = input.value;
     const cursor = input.selectionStart;
 
@@ -130,16 +155,18 @@ function applyMask(input, options = {}) {
       return;
     }
 
-    const prevDigits = parseFormatted(input.value);
-    const digitDelta = digits.length - prevDigits.length;
-
-    // Calculate cursor digit position before reformatting
-    const cursorDigitPos = countDigitsBefore(raw, cursor);
+    // Count the user's digits before the cursor (exclude prefix '7' at position 1)
+    // The prefix is '+7 (' (positions 0-3). Count digits from position 4 onward.
+    // When typing a new digit, the cursor is AFTER that digit, so we count digits
+    // in range [4, cursor) — this INCLUDES the newly typed digit.
+    // cursorDigitPos = how many user-digits are before or at cursor.
+    // After formatting, we want cursor positioned after the cursorDigitPos-th digit.
+    const cursorDigitPos = countUserDigitsBefore(raw, cursor);
 
     const formatted = formatDigits(digits);
     input.value = formatted;
 
-    // Restore cursor: position it after the cursorDigitPos-th digit in the formatted string
+    // Position cursor after the cursorDigitPos-th digit
     const newPos = cursorDigitPos + getPrefixUpTo(cursorDigitPos);
     input.setSelectionRange(newPos, newPos);
 
@@ -149,9 +176,12 @@ function applyMask(input, options = {}) {
     }
   }
 
-  function countDigitsBefore(value, pos) {
+  // Count user's digits before cursor position, excluding the prefix digit '7'
+  // Only counts digits in the range [4, pos) — i.e., after the "+7 (" prefix
+  function countUserDigitsBefore(value, pos) {
+    if (pos <= 4) return 0;
     let count = 0;
-    for (let i = 0; i < pos && i < value.length; i++) {
+    for (let i = 4; i < pos && i < value.length; i++) {
       if (DIGIT.test(value[i])) count++;
     }
     return count;
@@ -171,11 +201,51 @@ function applyMask(input, options = {}) {
   }
 
   function handleKeydown(e) {
-    // Allow: backspace, delete, arrows, tab, home, end, ctrl/cmd
-    if (['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Tab', 'Home', 'End'].includes(e.key)) {
+    // Allow: arrows, tab, home, end, ctrl/cmd
+    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Tab', 'Home', 'End'].includes(e.key)) {
       return;
     }
     if (e.ctrlKey || e.metaKey) return;
+
+    // Handle backspace
+    if (e.key === 'Backspace') {
+      const cursor = input.selectionStart || 0;
+      const digitPos = countUserDigitsBefore(input.value, cursor);
+
+      // Prevent backspace into the prefix area
+      if (digitPos <= 0) {
+        e.preventDefault();
+        return;
+      }
+
+      // Prevent browser from deleting from the formatted string
+      e.preventDefault();
+
+      // Get the raw digits and remove the one before the cursor
+      const rawDigits = parseFormatted(input.value);
+      // digitPos is the count of user-digits before cursor
+      // We want to remove the digitPos-th digit (0-indexed: digitPos-1)
+      const newDigits = rawDigits.slice(0, digitPos - 1) + rawDigits.slice(digitPos);
+
+      if (!newDigits.length) {
+        input.value = '';
+        input.setSelectionRange(0, 0);
+      } else {
+        const formatted = formatDigits(newDigits);
+        input.value = formatted;
+
+        // Position cursor after the (digitPos-1)-th digit
+        const newPos = (digitPos - 1) + getPrefixUpTo(digitPos - 1);
+        input.setSelectionRange(newPos, newPos);
+      }
+
+      // Skip the input event that will fire after backspace
+      skipNextInput = true;
+      return;
+    }
+
+    // Allow delete
+    if (e.key === 'Delete') return;
 
     // Only allow digits
     if (!DIGIT.test(e.key) || e.key.length !== 1) {
@@ -190,7 +260,7 @@ function applyMask(input, options = {}) {
 
     const raw = input.value;
     const prevDigits = parseFormatted(raw);
-    const cursorDigitPos = countDigitsBefore(raw, input.selectionStart);
+    const cursorDigitPos = countUserDigitsBefore(raw, input.selectionStart);
 
     const combined = prevDigits.slice(0, cursorDigitPos) + digits + prevDigits.slice(cursorDigitPos);
     const trimmed = combined.slice(0, 10);
@@ -209,12 +279,16 @@ function applyMask(input, options = {}) {
   input.addEventListener('input', handleInput);
   input.addEventListener('keydown', handleKeydown);
   input.addEventListener('paste', handlePaste);
+  input.addEventListener('focus', handleFocus);
+  input.addEventListener('blur', handleBlur);
 
   return {
     destroy() {
       input.removeEventListener('input', handleInput);
       input.removeEventListener('keydown', handleKeydown);
       input.removeEventListener('paste', handlePaste);
+      input.removeEventListener('focus', handleFocus);
+      input.removeEventListener('blur', handleBlur);
     },
   };
 }
