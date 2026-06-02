@@ -122,8 +122,66 @@ function applyMask(input, options = {}) {
   input.setAttribute('maxlength', 18); // max formatted length: +7 (XXX) XXX-XX-XX
 
   let skipNextInput = false;
-  let digitTyped = false;
-  let cursorDigitPosBefore = 0; // number of user digits before cursor, captured in keydown
+
+  /**
+   * Count user digits (excluding prefix '7') before a given cursor position
+   * in the formatted string.
+   * Digits before index 4 are part of the prefix, so we start from 4.
+   */
+  function countUserDigitsBefore(value, pos) {
+    let count = 0;
+    for (let i = 4; i < pos && i < value.length; i++) {
+      if (DIGIT.test(value[i])) count++;
+    }
+    return count;
+  }
+
+  /**
+   * Convert digit count (1-based) to cursor position in formatted string.
+   * n=1 → 5  ("+7 (9|")
+   * n=3 → 7  ("+7 (916|")
+   * n=4 → 10 ("+7 (916) 1|")
+   * n=6 → 12 ("+7 (916) 123|")
+   * n=7 → 14 ("+7 (916) 123-4|")
+   * n=8 → 15 ("+7 (916) 123-45|")
+   * n=9 → 17 ("+7 (916) 123-45-6|")
+   * n=10→ 18 ("+7 (916) 123-45-67|")
+   */
+  function cursorAfterDigit(n) {
+    if (n <= 3) return n + 4;       // "+7 (" = 3 + n digits
+    if (n <= 6) return n + 6;       // "+7 (" + 3 + ") " + (n-3) digits = 3+3+2+n-3
+    if (n <= 8) return n + 7;       // "+7 (XXX) XXX-" + (n-6) digits = 13+n-6
+    return n + 8;                     // "+7 (XXX) XXX-XX-" + (n-8) digits = 15+n-8
+  }
+
+  /**
+   * Core reformat function. Takes raw user digits, formats them, and places cursor.
+   * @param {string} digits - user digits (no country code)
+   * @param {number} cursorDigitIndex - 0-indexed: number of user digits before the cursor
+   */
+  function setDigits(digits, cursorDigitIndex) {
+    // Normalize
+    const { digits: normalized } = normalizeDigits(digits);
+
+    if (!normalized.length) {
+      input.value = '';
+      input.setSelectionRange(0, 0);
+      if (onComplete) onComplete('');
+      return;
+    }
+
+    const formatted = formatDigits(normalized);
+    input.value = formatted;
+
+    // Clamp cursorDigitIndex to valid range
+    const idx = Math.min(cursorDigitIndex, normalized.length);
+    const cursorPos = idx === 0 ? 4 : cursorAfterDigit(idx);
+    input.setSelectionRange(cursorPos, cursorPos);
+
+    if (normalized.length === 10 && onComplete) {
+      onComplete(formatted);
+    }
+  }
 
   function handleFocus() {
     // If empty, insert +7 prefix
@@ -141,68 +199,6 @@ function applyMask(input, options = {}) {
     }
   }
 
-  function handleInput() {
-    if (skipNextInput) {
-      skipNextInput = false;
-      return;
-    }
-
-    // Only reformat when a digit was just typed.
-    // On other input events (Delete, IME, etc.) we skip reformatting
-    // to avoid cursor jumps.
-    if (!digitTyped) {
-      digitTyped = false;
-      return;
-    }
-    digitTyped = false;
-
-    const raw = input.value;
-    const { digits } = normalizeDigits(raw);
-
-    if (!digits.length) {
-      input.value = '';
-      return;
-    }
-
-    const formatted = formatDigits(digits);
-    input.value = formatted;
-
-    // cursorDigitPosBefore = digits before cursor BEFORE the new digit was inserted.
-    // After insertion, the new digit is at 1-indexed position (cursorDigitPosBefore + 1) among user digits.
-    // Cursor should be right after it.
-    const cursorDigitPosAfter = cursorDigitPosBefore + 1;
-    const newPos = cursorDigitPosAfter + getPrefixUpTo(cursorDigitPosAfter);
-    input.setSelectionRange(newPos, newPos);
-
-    if (digits.length === 10 && onComplete) {
-      onComplete(formatted);
-    }
-  }
-
-  // Count user's digits before cursor position, excluding the prefix digit '7'
-  // Only counts digits in the range [4, pos) — i.e., after the "+7 (" prefix
-  function countUserDigitsBefore(value, pos) {
-    if (pos <= 4) return 0;
-    let count = 0;
-    for (let i = 4; i < pos && i < value.length; i++) {
-      if (DIGIT.test(value[i])) count++;
-    }
-    return count;
-  }
-
-  // Returns the number of non-digit chars before the n-th digit in the formatted string
-  function getPrefixUpTo(n) {
-    // +7 (XXX) XXX-XX-XX
-    // digit 1-3: prefix = '+7 (' = 3 chars
-    // digit 4-6: prefix = '+7 (' + ')' + ' ' = 5 chars
-    // digit 7-8: prefix = '+7 (' + ')' + ' ' + '-' = 6 chars
-    // digit 9-10: prefix = '+7 (' + ')' + ' ' + '-' + '-' = 7 chars
-    if (n <= 3) return 3;
-    if (n <= 6) return 5;
-    if (n <= 8) return 6;
-    return 7;
-  }
-
   function handleKeydown(e) {
     // Allow: arrows, tab, home, end, ctrl/cmd
     if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Tab', 'Home', 'End'].includes(e.key)) {
@@ -210,81 +206,70 @@ function applyMask(input, options = {}) {
     }
     if (e.ctrlKey || e.metaKey) return;
 
+    const cursor = input.selectionStart || 0;
+    const rawDigits = parseFormatted(input.value);
+    const digitPos = countUserDigitsBefore(input.value, cursor);
+
     // Handle backspace
     if (e.key === 'Backspace') {
-      const cursor = input.selectionStart || 0;
-      const digitPos = countUserDigitsBefore(input.value, cursor);
-
-      // Prevent backspace into the prefix area
       if (digitPos <= 0) {
+        // Can't delete prefix
         e.preventDefault();
         return;
       }
 
       e.preventDefault();
-
-      const rawDigits = parseFormatted(input.value);
       const newDigits = rawDigits.slice(0, digitPos - 1) + rawDigits.slice(digitPos);
-
-      if (!newDigits.length) {
-        input.value = '';
-        input.setSelectionRange(0, 0);
-      } else {
-        const formatted = formatDigits(newDigits);
-        input.value = formatted;
-
-        const newPos = (digitPos - 1) + getPrefixUpTo(digitPos - 1);
-        input.setSelectionRange(newPos, newPos);
-      }
-
+      setDigits(newDigits, digitPos - 1);
       skipNextInput = true;
       return;
     }
 
-    // Handle delete (same logic as backspace but removes digit at cursor)
+    // Handle delete
     if (e.key === 'Delete') {
-      const cursor = input.selectionStart || 0;
-      const digitPos = countUserDigitsBefore(input.value, cursor);
-
-      if (digitPos <= 0) {
+      if (digitPos <= 0 || digitPos >= rawDigits.length) {
         e.preventDefault();
         return;
       }
 
       e.preventDefault();
-
-      const rawDigits = parseFormatted(input.value);
-      // digitPos = number of user-digits before cursor; delete the next one (index digitPos)
-      if (digitPos >= rawDigits.length) {
-        // Cursor is after the last digit — nothing to delete
-        return;
-      }
-
       const newDigits = rawDigits.slice(0, digitPos) + rawDigits.slice(digitPos + 1);
-
-      if (!newDigits.length) {
-        input.value = '';
-        input.setSelectionRange(0, 0);
-      } else {
-        const formatted = formatDigits(newDigits);
-        input.value = formatted;
-
-        const newPos = digitPos + getPrefixUpTo(digitPos);
-        input.setSelectionRange(newPos, newPos);
-      }
-
+      setDigits(newDigits, digitPos);
       skipNextInput = true;
       return;
     }
 
-    // Digit typed — capture cursor digit pos BEFORE browser inserts, then reformat in handleInput
+    // Digit typed
     if (DIGIT.test(e.key) && e.key.length === 1) {
-      cursorDigitPosBefore = countUserDigitsBefore(input.value, input.selectionStart || 0);
-      digitTyped = true;
+      // Don't allow more than 10 digits
+      if (rawDigits.length >= 10) {
+        e.preventDefault();
+        return;
+      }
+
+      e.preventDefault();
+      // Insert digit at the cursor position in the digit sequence
+      const newDigits = rawDigits.slice(0, digitPos) + e.key + rawDigits.slice(digitPos);
+      setDigits(newDigits, digitPos + 1);
+      skipNextInput = true;
       return;
     }
 
+    // Block everything else
     e.preventDefault();
+  }
+
+  function handleInput() {
+    if (skipNextInput) {
+      skipNextInput = false;
+      return;
+    }
+
+    // Fallback for any unhandled input (IME, mobile keyboards, etc.)
+    const rawDigits = parseFormatted(input.value);
+    const cursor = input.selectionStart || 0;
+    const digitPos = countUserDigitsBefore(input.value, cursor);
+    setDigits(rawDigits, digitPos);
   }
 
   function handlePaste(e) {
@@ -292,22 +277,14 @@ function applyMask(input, options = {}) {
     const text = e.clipboardData.getData('text');
     const { digits } = normalizeDigits(text);
 
-    const raw = input.value;
-    const prevDigits = parseFormatted(raw);
-    const cursorDigitPos = countUserDigitsBefore(raw, input.selectionStart);
+    const rawDigits = parseFormatted(input.value);
+    const cursor = input.selectionStart || 0;
+    const cursorDigitPos = countUserDigitsBefore(input.value, cursor);
 
-    const combined = prevDigits.slice(0, cursorDigitPos) + digits + prevDigits.slice(cursorDigitPos);
+    const combined = rawDigits.slice(0, cursorDigitPos) + digits + rawDigits.slice(cursorDigitPos);
     const trimmed = combined.slice(0, 10);
 
-    const formatted = formatDigits(trimmed);
-    input.value = formatted;
-
-    const newPos = trimmed.length + getPrefixUpTo(trimmed.length);
-    input.setSelectionRange(newPos, newPos);
-
-    if (trimmed.length === 10 && onComplete) {
-      onComplete(formatted);
-    }
+    setDigits(trimmed, trimmed.length);
   }
 
   input.addEventListener('input', handleInput);
