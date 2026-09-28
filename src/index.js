@@ -97,10 +97,45 @@ export function parseFormatted(formatted) {
 }
 
 /**
- * Apply mask to an input element.
- * Returns a controller object with .destroy() method.
+ * Check if target is a single DOM element or element-like object
  */
-export function applyMask(input, options = {}) {
+function isElement(target) {
+  if (!target || typeof target !== 'object') return false;
+  if (typeof Element !== 'undefined' && target instanceof Element) return true;
+  if (target.nodeType === 1) return true;
+  if (typeof target.addEventListener === 'function' && typeof target[Symbol.iterator] !== 'function' && !Array.isArray(target)) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Resolve target to an array of elements
+ */
+function toElementArray(target) {
+  if (!target) return [];
+  if (typeof target === 'string') {
+    if (typeof document !== 'undefined') {
+      return Array.from(document.querySelectorAll(target));
+    }
+    return [];
+  }
+  if (isElement(target)) {
+    return [target];
+  }
+  if (typeof target[Symbol.iterator] === 'function') {
+    return Array.from(target).filter(isElement);
+  }
+  if (typeof target.length === 'number') {
+    return Array.from(target).filter(isElement);
+  }
+  return [];
+}
+
+/**
+ * Internal: attach mask to a single input element.
+ */
+function maskElement(input, options = {}) {
   const {
     placeholder = '+7 (___) ___-__-__',
     onComplete,
@@ -158,7 +193,7 @@ export function applyMask(input, options = {}) {
     if (!normalized.length) {
       input.value = '';
       input.setSelectionRange(0, 0);
-      if (onComplete) onComplete('');
+      if (onComplete) onComplete('', input);
       return;
     }
 
@@ -171,7 +206,7 @@ export function applyMask(input, options = {}) {
     input.setSelectionRange(cursorPos, cursorPos);
 
     if (normalized.length === 10 && onComplete) {
-      onComplete(formatted);
+      onComplete(formatted, input);
     }
   }
 
@@ -327,8 +362,13 @@ export function applyMask(input, options = {}) {
   input.addEventListener('change', handleChange);
   input.addEventListener('blur', handleBlur);
 
+  let isDestroyed = false;
+
   return {
+    input,
     destroy() {
+      if (isDestroyed) return;
+      isDestroyed = true;
       input.removeEventListener('input', handleInput);
       input.removeEventListener('keydown', handleKeydown);
       input.removeEventListener('paste', handlePaste);
@@ -336,5 +376,43 @@ export function applyMask(input, options = {}) {
       input.removeEventListener('change', handleChange);
       input.removeEventListener('blur', handleBlur);
     },
+    [Symbol.iterator]: function* () {
+      yield this;
+    },
   };
 }
+
+/**
+ * Apply mask to input element(s).
+ * Accepts:
+ *   - A single DOM element
+ *   - A CSS selector string (e.g. '.phone-mask', 'input[type="tel"]')
+ *   - A NodeList, HTMLCollection, or Array/Iterable of elements
+ *
+ * Returns a controller object (for single element) or an array of controllers (for multiple elements),
+ * both providing a .destroy() method.
+ */
+export function applyMask(target, options = {}) {
+  if (isElement(target)) {
+    return maskElement(target, options);
+  }
+
+  const elements = toElementArray(target);
+  const controllers = elements.map((el) => maskElement(el, options));
+
+  controllers.destroy = function () {
+    for (const c of controllers) {
+      c.destroy();
+    }
+  };
+
+  Object.defineProperty(controllers, 'input', {
+    get() {
+      return controllers[0]?.input;
+    },
+    configurable: true,
+  });
+
+  return controllers;
+}
+

@@ -7,12 +7,12 @@
 </head>
 <body>
   <h1>rf-phone-mask — test</h1>
-  <input type="text" id="phone" style="font-size:24px;padding:8px;width:300px;">
+  <p><input type="text" class="phone-input" placeholder="Телефон 1" style="font-size:20px;padding:8px;width:300px;margin:8px 0;"></p>
+  <p><input type="text" class="phone-input" placeholder="Телефон 2" style="font-size:20px;padding:8px;width:300px;margin:8px 0;"></p>
   <script src="rf-phone-mask.min.js"></script>
   <script>
-    const input = document.getElementById('phone');
-    const mask = rfPhoneMask.applyMask(input, {
-      onComplete: (v) => console.log('Complete:', v)
+    const masks = rfPhoneMask.applyMask('.phone-input', {
+      onComplete: (v, input) => console.log('Complete:', v, input)
     });
   </script>
 </body>

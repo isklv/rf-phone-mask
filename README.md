@@ -37,9 +37,9 @@ After including, all functions are available on the `rfPhoneMask` global:
 <input type="text" id="phone">
 
 <script>
-  // DOM mask
-  const controller = rfPhoneMask.applyMask(document.getElementById('phone'), {
-    onComplete: (value) => console.log('Ready:', value),
+// DOM mask (single element or selector)
+  const controller = rfPhoneMask.applyMask('.phone', {
+    onComplete: (value, input) => console.log('Ready:', value, input),
   });
 
   // Utility functions
@@ -49,7 +49,7 @@ After including, all functions are available on the `rfPhoneMask` global:
   rfPhoneMask.normalizeDigits('+79161234567');
   // → { digits: '9161234567', hasPrefix: true }
 
-  // Remove mask later
+  // Remove mask later (removes from all matched elements)
   // controller.destroy();
 </script>
 ```
@@ -57,6 +57,8 @@ After including, all functions are available on the `rfPhoneMask` global:
 ## Usage
 
 ### DOM Mask (vanilla JS) — npm
+
+Single element:
 
 ```js
 import { applyMask } from 'rf-phone-mask';
@@ -72,6 +74,25 @@ const controller = applyMask(input, {
 
 // Later, if needed:
 controller.destroy();
+```
+
+Multiple elements (selector, NodeList, or Array):
+
+```js
+import { applyMask } from 'rf-phone-mask';
+
+// By CSS selector:
+const controllers = applyMask('.phone-input', {
+  onComplete: (value, input) => {
+    console.log('Phone complete on:', input, value);
+  },
+});
+
+// Destroy all at once:
+controllers.destroy();
+
+// Or destroy individually:
+// controllers[0].destroy();
 ```
 
 ### Utility Functions
@@ -154,16 +175,20 @@ function handleInput(e) {
 
 ## API
 
-### `applyMask(input, options?)`
+### `applyMask(target, options?)`
 
-Attaches a mask to a DOM `<input>` element.
+Attaches a mask to one or more DOM `<input>` elements.
+
+- `target`: Can be a DOM element (`HTMLInputElement`), a CSS selector string (e.g. `'.phone'`, `'#phone'`), a `NodeList`, an `HTMLCollection`, or an `Array` of elements.
 
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `placeholder` | `string` | `+7 (___) ___-__-__` | Input placeholder |
-| `onComplete` | `function(value)` | — | Called when 10 digits entered |
+| `onComplete` | `function(value, input)` | — | Called when 10 digits entered |
 
-Returns `{ destroy() }` — call `destroy()` to remove the mask.
+**Returns:**
+- For a single element: `{ destroy(), input }`
+- For multiple elements / selectors: Array of controllers, with a `.destroy()` method that destroys all of them at once, plus individual controllers `[controller1, controller2]`.
 
 ### `formatDigits(digits)`
 
